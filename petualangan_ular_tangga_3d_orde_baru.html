@@ -1,0 +1,1849 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Petualangan Ular Tangga 3D — Masa Orde Baru</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent: #ec4899;
+    --accent-dark: #9d174d;
+    --glass-bg: rgba(255, 255, 255, 0.82);
+    --glass-border: rgba(255, 255, 255, 0.65);
+  }
+  * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    background: #1a1025;
+  }
+  #canvas-container {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
+  }
+  canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    outline: none;
+  }
+
+  /* Glassmorphism HUD */
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1.5px solid var(--glass-border);
+    box-shadow: 0 12px 32px rgba(15, 10, 30, 0.18);
+  }
+  .glass-dark {
+    background: rgba(24, 16, 40, 0.78);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 99px; }
+
+  /* Animations */
+  @keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.55); }
+    50% { box-shadow: 0 0 0 10px rgba(236, 72, 153, 0); }
+  }
+  .btn-roll-ready {
+    animation: pulseGlow 2s infinite;
+  }
+  @keyframes floatBadge {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+  .float-anim { animation: floatBadge 2.5s ease-in-out infinite; }
+
+  /* Intro Splash */
+  #gameIntro {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: radial-gradient(circle at top right, #4c1d95, #1e1b4b 50%, #0f172a);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.6s ease, visibility 0.6s ease;
+  }
+  #gameIntro.hide { opacity: 0; visibility: hidden; pointer-events: none; }
+  @keyframes loadBar { to { width: 100%; } }
+  .loading-fill { animation: loadBar 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+  /* Toast Notification */
+  #toastBox {
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  }
+</style>
+</head>
+<body>
+
+<!-- SPLASH SCREEN -->
+<div id="gameIntro">
+  <div class="max-w-md w-full mx-4 p-8 rounded-3xl glass-dark text-center text-white">
+    <div class="text-6xl mb-3 float-anim">🐍🪜🎲</div>
+    <span class="inline-block px-3 py-1 rounded-full text-xs font-extrabold tracking-wider bg-pink-500/30 border border-pink-400/40 text-pink-200 mb-2">EDISI 3D INTERAKTIF</span>
+    <h1 class="text-2xl sm:text-3xl font-black tracking-tight mb-2">Ular Tangga 3D: Orde Baru</h1>
+    <p class="text-sm text-slate-300 mb-6">Membangun papan 3D, tangga kayu prosedural, ular melengkung & arena kuis sejarah...</p>
+    <div class="w-full h-2.5 bg-white/15 rounded-full overflow-hidden mb-3">
+      <div class="h-full w-0 bg-gradient-to-r from-pink-400 via-amber-300 to-emerald-400 rounded-full loading-fill"></div>
+    </div>
+    <p class="text-xs font-bold tracking-widest text-pink-300 uppercase">Menyiapkan Dunia 3D...</p>
+  </div>
+</div>
+
+<!-- 3D CANVAS -->
+<div id="canvas-container"></div>
+
+<!-- TOP NAVBAR HUD -->
+<header class="fixed top-0 inset-x-0 z-20 pointer-events-none p-2.5 sm:p-4">
+  <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+    <!-- Brand -->
+    <div class="glass pointer-events-auto px-3.5 py-2 rounded-2xl flex items-center gap-2.5">
+      <span class="text-xl sm:text-2xl">🐍🪜</span>
+      <div>
+        <div class="flex items-center gap-1.5">
+          <h2 class="font-black text-slate-800 text-sm sm:text-base leading-none">Ular Tangga 3D</h2>
+          <span class="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-gradient-to-r from-pink-500 to-rose-600 text-white">ORDE BARU</span>
+        </div>
+        <p id="subtitle" class="text-[11px] font-semibold text-slate-500 hidden sm:block mt-0.5">Mode 2 Pemain • Taklukkan Kotak 100!</p>
+      </div>
+    </div>
+
+    <!-- Top Controls -->
+    <div class="glass pointer-events-auto px-2.5 py-1.5 rounded-2xl flex items-center gap-1.5 sm:gap-2 flex-wrap">
+      <select id="modeSelect" title="Mode Permainan" class="bg-white/80 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-extrabold text-slate-700 cursor-pointer outline-none hover:border-pink-400">
+        <option value="pvp2">👥 2 Pemain</option>
+        <option value="pvp3">👥 3 Pemain</option>
+        <option value="pvp4">👥 4 Pemain</option>
+        <option value="bot">🤖 1P vs Bot AI</option>
+        <option value="fast">⚡ Mode Kilat</option>
+      </select>
+
+      <select id="levelSelect" title="Tingkat Kesulitan" class="bg-white/80 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-extrabold text-slate-700 cursor-pointer outline-none hover:border-pink-400">
+        <option value="normal">🎯 Normal (-2)</option>
+        <option value="hard">🔥 Sulit (-4)</option>
+        <option value="santuy">🌿 Santai (0)</option>
+      </select>
+
+      <select id="themeSelect" title="Tema Papan 3D" class="bg-white/80 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-extrabold text-slate-700 cursor-pointer outline-none hover:border-pink-400">
+        <option value="pink">🌸 Sakura Pink</option>
+        <option value="royal">💎 Royal Biru</option>
+        <option value="forest">🌲 Hutan Zamrud</option>
+      </select>
+
+      <button id="timerToggle" title="Timer Kuis 20 Detik" class="px-2.5 py-1.5 rounded-xl bg-white/80 border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-amber-50 transition">
+        ⏱️ Timer: ON
+      </button>
+
+      <button id="soundToggle" title="Efek Suara" class="px-2.5 py-1.5 rounded-xl bg-white/80 border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-pink-50 transition">
+        🔊
+      </button>
+
+      <button id="openHelp" title="Panduan & Legenda" class="px-2.5 py-1.5 rounded-xl bg-white/80 border border-slate-200 text-xs font-extrabold text-slate-700 hover:bg-indigo-50 transition">
+        📖
+      </button>
+
+      <button id="navRestart" title="Mulai Ulang" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 text-white text-xs font-extrabold shadow hover:brightness-110 transition">
+        🔄 Ulang
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- FLOATING TOAST NOTIFICATION -->
+<div id="toastBox" class="fixed top-20 left-1/2 -translate-x-1/2 z-30 opacity-0 -translate-y-4">
+  <div id="toastContent" class="glass-dark text-white px-5 py-2.5 rounded-full text-xs sm:text-sm font-extrabold shadow-xl flex items-center gap-2">
+    <span>✨</span><span id="toastText">Pesan notifikasi</span>
+  </div>
+</div>
+
+<!-- CAMERA CONTROLS (BOTTOM LEFT) -->
+<div class="fixed bottom-4 left-4 z-20 flex flex-col gap-2 pointer-events-auto">
+  <div class="glass p-1.5 rounded-2xl flex items-center gap-1">
+    <button data-cam="iso" class="cam-btn px-2.5 py-1.5 rounded-xl text-xs font-extrabold bg-pink-600 text-white transition">🎥 Isometrik</button>
+    <button data-cam="top" class="cam-btn px-2.5 py-1.5 rounded-xl text-xs font-extrabold text-slate-700 hover:bg-white/70 transition">🗺️ Atas</button>
+    <button data-cam="follow" class="cam-btn px-2.5 py-1.5 rounded-xl text-xs font-extrabold text-slate-700 hover:bg-white/70 transition">🎯 Ikuti Pion</button>
+  </div>
+  <div class="hidden sm:flex glass px-3 py-1.5 rounded-xl text-[11px] font-bold text-slate-600 items-center gap-3">
+    <span>🖱️ Seret: Putar 360°</span>
+    <span>🔍 Scroll: Zoom</span>
+    <span>⌨️ Spasi: Lempar Dadu</span>
+  </div>
+</div>
+
+<!-- RIGHT HUD SIDEBAR (PLAYERS, POWER-UPS, DICE, LOG) -->
+<aside id="sidePanel" class="fixed right-3 sm:right-4 top-20 sm:top-20 bottom-3 sm:bottom-4 w-[calc(100vw-24px)] sm:w-80 z-20 pointer-events-none flex flex-col justify-between gap-2.5">
+  
+  <!-- Toggle Panel Button on Mobile -->
+  <button id="toggleHudBtn" class="sm:hidden pointer-events-auto self-end glass px-3 py-1.5 rounded-xl text-xs font-extrabold text-slate-800 shadow">
+    📊 Panel & Pemain
+  </button>
+
+  <div id="hudBody" class="pointer-events-auto flex flex-col gap-2.5 max-h-full overflow-y-auto pr-0.5">
+    <!-- Status Banner -->
+    <div class="glass p-3 rounded-2xl">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[11px] font-extrabold uppercase tracking-wider text-pink-600">Status Giliran</span>
+        <span id="streakBadge" class="hidden px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-900">🔥 Streak x2</span>
+      </div>
+      <p id="status" class="text-xs sm:text-sm font-bold text-slate-800 leading-snug">Giliran Pemain 1 (Hitam). Lempar dadu untuk memulai!</p>
+    </div>
+
+    <!-- Player List & Power-Ups -->
+    <div class="glass p-3 rounded-2xl">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-xs font-black uppercase tracking-wider text-slate-700">🏆 Klasemen & Kartu Aksi</h3>
+        <span id="modeBadge" class="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-800 text-white">2 PEMAIN</span>
+      </div>
+      <div id="playerList" class="flex flex-col gap-2"></div>
+    </div>
+
+    <!-- Active Turn Power-Up Bar -->
+    <div id="powerupBar" class="glass p-2.5 rounded-2xl">
+      <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1.5 flex justify-between">
+        <span>⚡ Power-Up Giliran Ini</span>
+        <span class="text-pink-600">Klik untuk pakai</span>
+      </div>
+      <div class="grid grid-cols-3 gap-1.5" id="powerupButtons">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+
+    <!-- Dice & Roll Action -->
+    <div class="glass p-3 rounded-2xl flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <div id="diceDisplay" class="w-12 h-12 rounded-2xl bg-gradient-to-br from-white to-pink-100 border-2 border-pink-200 flex items-center justify-center text-3xl shadow-inner font-black text-slate-800">
+          🎲
+        </div>
+        <div>
+          <div class="text-[10px] font-extrabold uppercase text-slate-400">Hasil Dadu</div>
+          <div id="diceValueText" class="text-sm font-black text-slate-800">Siap Lempar</div>
+        </div>
+      </div>
+      <button id="roll" class="btn-roll-ready px-4 py-3 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 text-white font-black text-sm shadow-lg hover:brightness-110 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:animation-none">
+        🎲 Lempar!
+      </button>
+    </div>
+
+    <!-- Mini Activity Log -->
+    <div class="glass p-2.5 rounded-2xl hidden sm:block">
+      <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1.5">📜 Riwayat Pertandingan</div>
+      <div id="logList" class="max-h-28 overflow-y-auto flex flex-col gap-1 text-[11px] font-semibold text-slate-700">
+        <div class="px-2 py-1 rounded-lg bg-white/60">✨ Dunia 3D siap! Putar papan dengan mouse/sentuhan.</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- MODAL KUIS SEJARAH & HEWAN PENJAGA -->
+<div id="quiz" class="fixed inset-0 z-40 hidden items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+  <div class="max-w-lg w-full rounded-3xl bg-white border-2 border-pink-200 shadow-2xl overflow-hidden animate-[scaleIn_.25s_ease]">
+    <!-- Quiz Header -->
+    <div class="bg-gradient-to-r from-pink-600 via-rose-600 to-purple-700 p-4 text-white flex items-center justify-between">
+      <div>
+        <span id="qBadge" class="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-white/20 mb-1">Tantangan Sejarah</span>
+        <h2 id="qtitle" class="text-lg font-black leading-tight">SOAL SEJARAH ORDE BARU</h2>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="use5050Btn" class="hidden px-2.5 py-1.5 rounded-xl bg-amber-400 text-slate-900 text-xs font-black shadow hover:bg-amber-300 transition" title="Hapus 2 jawaban salah">
+          💡 50:50 (<span id="count5050">0</span>)
+        </button>
+        <div id="quizTimerBox" class="w-11 h-11 rounded-2xl bg-white/20 border border-white/30 flex flex-col items-center justify-center">
+          <span class="text-[9px] font-bold uppercase opacity-80">Waktu</span>
+          <span id="quizTimerText" class="text-sm font-black leading-none">20</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quiz Body -->
+    <div class="p-5">
+      <p id="question" class="text-slate-800 font-extrabold text-base mb-4 leading-relaxed"></p>
+      <div id="answers" class="flex flex-col gap-2.5"></div>
+      <div id="feedback" class="mt-4 min-h-[28px] text-sm font-extrabold text-center"></div>
+      <button id="continue" class="hidden w-full mt-3 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black text-sm shadow-lg hover:brightness-110 transition">
+        Lanjutkan Langkah ➔
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PODIUM KEMENANGAN -->
+<div id="winModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md">
+  <div class="max-w-md w-full rounded-3xl bg-gradient-to-b from-amber-50 via-white to-pink-50 border-2 border-amber-300 p-6 text-center shadow-2xl">
+    <div class="text-6xl mb-2 float-anim">🏆👑🎉</div>
+    <span class="px-3 py-1 rounded-full text-xs font-black bg-amber-400 text-slate-900 uppercase tracking-wider">Pemenang Utama</span>
+    <h2 id="winnerTitle" class="text-2xl font-black text-slate-900 mt-2">Pemain 1 Juara!</h2>
+    <p id="winnerSub" class="text-xs font-bold text-slate-500 mt-1 mb-4">Berhasil menaklukkan kotak 100 Era Orde Baru!</p>
+
+    <div id="podiumStats" class="bg-white/90 border border-slate-200 rounded-2xl p-3 mb-5 text-left flex flex-col gap-2"></div>
+
+    <div class="flex gap-2.5">
+      <button id="winCloseBtn" class="flex-1 py-3 rounded-2xl bg-slate-200 text-slate-800 font-extrabold text-sm hover:bg-slate-300 transition">Lihat Papan 3D</button>
+      <button id="winRestartBtn" class="flex-1 py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-600 text-white font-black text-sm shadow-lg hover:brightness-110 transition">🔄 Main Lagi</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PANDUAN & LEGENDA 3D -->
+<div id="helpModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+  <div class="max-w-lg w-full rounded-3xl bg-white border-2 border-pink-200 p-6 shadow-2xl max-h-[88vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xl font-black text-slate-900">📖 Panduan Ular Tangga 3D</h2>
+      <button id="closeHelpTop" class="w-8 h-8 rounded-full bg-slate-100 font-bold text-slate-600 hover:bg-slate-200">✕</button>
+    </div>
+    <div class="space-y-3 text-xs sm:text-sm text-slate-600 leading-relaxed">
+      <div class="p-3 rounded-2xl bg-pink-50 border border-pink-100">
+        <strong class="text-pink-700 block mb-1">🎮 Cara Bermain 3D:</strong>
+        Lempar dadu 3D (klik tombol <b>Lempar!</b> atau tekan tombol <b>Spasi</b>). Jawab pertanyaan Sejarah Orde Baru dengan benar agar pion 3D melompat maju sesuai angka dadu!
+      </div>
+      <div class="p-3 rounded-2xl bg-amber-50 border border-amber-100">
+        <strong class="text-amber-800 block mb-1">⚡ Kartu Aksi (Power-Up):</strong>
+        Dapatkan kartu aksi dari <b>Kotak Bintang (⭐)</b> atau dengan menjawab benar <b>2x berturut-turut (Streak)</b>:
+        <ul class="list-disc pl-5 mt-1 space-y-1">
+          <li><b>🛡️ Perisai Anti-Ular:</b> Melindungimu dari gigitan ular 1x!</li>
+          <li><b>🎲 Dadu Ganda (2x):</b> Melipatgandakan langkah dadu giliran ini!</li>
+          <li><b>💡 Petunjuk 50:50:</b> Menghilangkan 2 opsi jawaban salah saat kuis.</li>
+        </ul>
+      </div>
+      <div class="p-3 rounded-2xl bg-emerald-50 border border-emerald-100">
+        <strong class="text-emerald-800 block mb-1">🐾 Elemen Papan 3D:</strong>
+        <ul class="list-disc pl-5 space-y-1">
+          <li><b>🪜 Tangga Kayu 3D:</b> Membawa pion naik cepat ke kotak atas.</li>
+          <li><b>🐍 Ular 3D Melengkung:</b> Menurunkan pion jika terinjak tanpa perisai.</li>
+          <li><b>🐯🦅🦁🐘 Hewan Penjaga:</b> Berada sebelum tangga; jawab tantangan satwa untuk bonus +1 kotak tepat ke kaki tangga!</li>
+        </ul>
+      </div>
+    </div>
+    <button id="closeHelp" class="w-full mt-5 py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-600 text-white font-black text-sm shadow-lg">Mengerti, Ayo Main!</button>
+  </div>
+</div>
+
+<script>
+// ============================================================================
+// 1. DATA PERTANYAAN, HEWAN PENJAGA, ULAR & TANGGA
+// ============================================================================
+const questions = [
+  ["Siapa presiden Indonesia pada masa Orde Baru?",["Soekarno","Soeharto","B.J. Habibie","Abdurrahman Wahid"],1],
+  ["Surat perintah yang menjadi salah satu awal peralihan menuju Orde Baru dikenal sebagai ...",["Supersemar","Dekrit Presiden","Tritura","Dwikora"],0],
+  ["Supersemar dikeluarkan pada tanggal ...",["17 Agustus 1945","11 Maret 1966","1 Oktober 1965","21 Mei 1998"],1],
+  ["Apa tujuan yang dinyatakan pemerintah Orde Baru?",["Mengganti dasar negara","Melaksanakan Pancasila dan UUD 1945 secara murni dan konsekuen","Menghapus pemerintahan","Membentuk negara federal"],1],
+  ["Program pembangunan lima tahunan disebut ...",["Repelita","Reformasi","Trikora","Dwikora"],0],
+  ["Repelita adalah singkatan dari ...",["Rencana Pembangunan Lima Tahun","Rencana Pendidikan Lima Tahun","Reformasi Pembangunan Lima Tahun","Rencana Ekonomi Lima Tahunan"],0],
+  ["Partai politik yang menjadi kekuatan utama pendukung Soeharto adalah ...",["PDI","PPP","Golkar","PKI"],2],
+  ["Pemilu pertama pada masa Orde Baru dilaksanakan pada tahun ...",["1965","1969","1971","1977"],2],
+  ["Penyederhanaan partai politik tahun 1973 menghasilkan ...",["Dua partai dan Golkar","Lima partai","Satu partai","Empat partai"],0],
+  ["Salah satu keberhasilan sektor pertanian masa Orde Baru adalah ...",["Menjadi negara industri terbesar","Mencapai swasembada beras","Menghentikan seluruh impor","Semua petani menjadi PNS"],1],
+  ["Indonesia mendapat penghargaan FAO pada 1984 karena ...",["Ekspor minyak meningkat","Mencapai swasembada beras","Mengembangkan komputer","Mengurangi penduduk"],1],
+  ["Salah satu kebijakan yang membatasi kebebasan pers adalah ...",["Kebebasan tanpa batas","Pembredelan media massa","Menghapus seluruh surat kabar","Membentuk media sosial"],1],
+  ["Dwifungsi ABRI berarti peran dalam bidang ...",["Ekonomi dan perdagangan","Pertahanan keamanan dan sosial politik","Pendidikan dan kesehatan","Pertanian dan industri"],1],
+  ["Salah satu penyebab runtuhnya Orde Baru adalah ...",["Krisis energi","Krisis moneter","Krisis budaya","Krisis pendidikan"],1],
+  ["Soeharto mengundurkan diri pada ...",["11 Maret 1966","17 Agustus 1997","21 Mei 1998","1 Juni 1999"],2],
+  ["Presiden yang menggantikan Soeharto adalah ...",["Megawati","B.J. Habibie","Abdurrahman Wahid","Susilo Bambang Yudhoyono"],1],
+  ["Salah satu tuntutan Reformasi 1998 adalah ...",["Kekuasaan tanpa batas","Menghapus praktik KKN","Membubarkan kampus","Menghapus pemilu"],1],
+  ["KKN adalah singkatan dari ...",["Korupsi, Kolusi, dan Nepotisme","Keamanan, Keadilan, Nasionalisme","Korupsi, Keamanan, Negara","Keadilan, Kesejahteraan, Nasionalisme"],0],
+  ["Akhir Orde Baru menandai dimulainya masa ...",["Demokrasi Terpimpin","Orde Lama","Reformasi","Demokrasi Liberal"],2],
+  ["Pada masa Orde Baru, Repelita berfokus pada ...",["Pembangunan bertahap","Perang dunia","Pembubaran sekolah","Penghapusan konstitusi"],0],
+  ["Tiga Tuntutan Rakyat yang menggema pada awal masa transisi menuju Orde Baru disebut ...",["Tritura","Tri Dharma","Tri Prasetya","Tri Sakti"],0],
+  ["Program transmigrasi pada masa Orde Baru bertujuan untuk ...",["Memindahkan penduduk dari daerah padat ke daerah jarang penduduk","Menghapus otonomi daerah","Mengurangi jumlah provinsi","Membuka wilayah pertambangan asing"],0],
+  ["Penataran P4 pada masa Orde Baru merupakan pedoman untuk ...",["Menghayati dan mengamalkan Pancasila","Menyusun anggaran negara","Mengatur lalu lintas kota","Mengelola ekspor migas"],0],
+  ["Kebijakan Keluarga Berencana (KB) pada masa Orde Baru dikelola oleh lembaga ...",["BKKBN","BPS","LIPI","BPPT"],0],
+  ["Salah satu fusi partai politik tahun 1973 yang menggabungkan NU, Parmusi, PSII, dan Perti menjadi ...",["Partai Persatuan Pembangunan (PPP)","Partai Demokrasi Indonesia (PDI)","Partai Bulan Bintang (PBB)","Partai Amanat Nasional (PAN)"],0],
+  ["Partai Demokrasi Indonesia (PDI) pada 1973 merupakan fusi dari beberapa partai, salah satunya adalah ...",["PNI dan Parkindo","Golkar dan Masyumi","PKI dan Murba","NasDem dan Gerindra"],0],
+  ["Program Wajib Belajar Pendidikan Dasar pada masa Orde Baru dimulai dari tingkat ...",["SD (6 tahun)","SMA (3 tahun)","Perguruan Tinggi","TK"],0],
+  ["Pada masa Orde Baru, Indonesia kembali menjadi anggota PBB pada tahun ...",["1966","1950","1975","1980"],0],
+  ["Asas tunggal yang ditetapkan bagi seluruh organisasi sosial politik dan kemasyarakatan pada masa Orde Baru adalah ...",["Pancasila","UUD 1945","Demokrasi Liberal","Sosialisme"],0],
+  ["Peristiwa kerusuhan besar yang memuncak menjelang akhir Orde Baru pada Mei 1998 terjadi di ...",["Jakarta dan beberapa kota besar","Bandung saja","Yogyakarta saja","Denpasar saja"],0]
+];
+
+const animalTiles = {
+  2:{emoji:"🐯",name:"HARIMAU",question:[
+    ["Harimau termasuk kelompok hewan ...",["Herbivora","Karnivora","Omnivora","Pengurai"],1],
+    ["Makanan utama harimau adalah ...",["Daun dan rumput","Daging hewan lain","Buah-buahan saja","Biji-bijian"],1],
+    ["Harimau biasanya hidup di ...",["Hutan","Laut dalam","Gurun es","Kota besar"],0]
+  ]},
+  7:{emoji:"🦅",name:"ELANG",question:[
+    ["Elang dikenal memiliki kemampuan ...",["Terbang dan penglihatan tajam","Bernapas dengan insang","Hidup di dalam tanah","Berjalan tanpa kaki"],0],
+    ["Elang termasuk kelompok ...",["Mamalia","Burung","Reptil","Amfibi"],1],
+    ["Elang menggunakan paruh dan cakarnya untuk ...",["Memanjat pohon saja","Mencari dan menangkap mangsa","Menyaring air","Menggali umbi"],1]
+  ]},
+  19:{emoji:"🦁",name:"SINGA",question:[
+    ["Singa termasuk hewan ...",["Herbivora","Karnivora","Pemakan tumbuhan saja","Pengurai"],1],
+    ["Singa dikenal sebagai hewan yang hidup ...",["Berkelompok","Selalu sendiri di laut","Di dalam gua es","Di pepohonan"],0],
+    ["Habitat singa banyak ditemukan di ...",["Sabana Afrika","Kutub Utara","Laut Pasifik","Hutan salju"],0]
+  ]},
+  27:{emoji:"🐘",name:"GAJAH",question:[
+    ["Bagian tubuh gajah untuk mengambil makanan adalah ...",["Sirip","Belalai","Sayap","Cangkang"],1],
+    ["Gajah termasuk kelompok ...",["Mamalia","Ikan","Serangga","Amfibi"],0],
+    ["Gajah memiliki ukuran tubuh yang ...",["Sangat kecil","Besar","Selalu lebih kecil dari kucing","Tidak berkaki"],1]
+  ]},
+  34:{emoji:"🐵",name:"MONYET",question:[
+    ["Monyet termasuk kelompok ...",["Primata","Ikan","Amfibi","Serangga"],0],
+    ["Monyet umumnya memiliki kemampuan ...",["Memanjat","Bernapas dengan insang","Terbang jauh","Hidup hanya di laut"],0],
+    ["Makanan beberapa jenis monyet antara lain ...",["Buah dan daun","Batu","Logam","Pasir"],0]
+  ]},
+  50:{emoji:"🐊",name:"BUAYA",question:[
+    ["Buaya termasuk jenis ...",["Mamalia","Reptil","Burung","Amfibi"],1],
+    ["Buaya banyak menghabiskan waktu di ...",["Air dan tepian sungai","Puncak gunung bersalju","Gurun kering","Dalam sarang burung"],0],
+    ["Buaya berkembang biak dengan cara ...",["Bertelur","Melahirkan","Membelah diri","Bertunas"],0]
+  ]},
+  70:{emoji:"🐼",name:"PANDA",question:[
+    ["Makanan utama panda adalah ...",["Bambu","Daging singa","Ikan hiu","Rumput laut"],0],
+    ["Panda termasuk kelompok ...",["Mamalia","Ikan","Serangga","Burung"],0],
+    ["Panda dikenal memiliki warna bulu ...",["Hitam dan putih","Merah dan biru","Hijau seluruhnya","Ungu dan kuning"],0]
+  ]},
+  79:{emoji:"🦒",name:"JERAPAH",question:[
+    ["Jerapah memiliki ciri khas ...",["Leher panjang","Tidak memiliki kaki","Hidup di laut","Memiliki delapan sayap"],0],
+    ["Jerapah memakan ...",["Daun dari pepohonan","Ikan kecil","Serangga saja","Daging"],0],
+    ["Jerapah hidup alami di ...",["Afrika","Antartika","Kutub Utara","Samudra Hindia"],0]
+  ]}
+};
+
+const bonusTiles = new Set([14, 38, 64, 84]);
+const snakes = {98:55, 87:36, 76:52, 62:18, 49:11, 43:25, 27:5, 94:73};
+const ladders = {3:22, 8:30, 20:41, 28:55, 35:48, 51:67, 71:91, 80:99};
+
+// ============================================================================
+// 2. AUDIO ENGINE (WEB AUDIO API)
+// ============================================================================
+let soundOn = true;
+let audioCtx = null;
+function playTone(type) {
+  if (!soundOn) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+
+    if (type === "dice") {
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(300, now);
+      osc.frequency.exponentialRampToValueAtTime(680, now + 0.14);
+      gain.gain.setValueAtTime(0.14, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+      osc.start(now); osc.stop(now + 0.16);
+    } else if (type === "step") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(580, now + 0.08);
+      gain.gain.setValueAtTime(0.09, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+      osc.start(now); osc.stop(now + 0.09);
+    } else if (type === "ladder") {
+      osc.type = "triangle";
+      [392, 494, 587, 784].forEach((f, i) => osc.frequency.setValueAtTime(f, now + i * 0.08));
+      gain.gain.setValueAtTime(0.14, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+      osc.start(now); osc.stop(now + 0.36);
+    } else if (type === "snake") {
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(420, now);
+      osc.frequency.exponentialRampToValueAtTime(110, now + 0.42);
+      gain.gain.setValueAtTime(0.13, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.44);
+      osc.start(now); osc.stop(now + 0.44);
+    } else if (type === "ok") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.setValueAtTime(659.25, now + 0.09);
+      osc.frequency.setValueAtTime(783.99, now + 0.18);
+      gain.gain.setValueAtTime(0.14, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+      osc.start(now); osc.stop(now + 0.34);
+    } else if (type === "bad") {
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.linearRampToValueAtTime(135, now + 0.28);
+      gain.gain.setValueAtTime(0.11, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      osc.start(now); osc.stop(now + 0.3);
+    } else if (type === "win") {
+      osc.type = "triangle";
+      [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5].forEach((f, i) => osc.frequency.setValueAtTime(f, now + i * 0.12));
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+      osc.start(now); osc.stop(now + 0.85);
+    }
+  } catch (e) {}
+}
+
+// ============================================================================
+// 3. THREE.JS 3D SCENE SETUP (PAPAN, TANGGA 3D, ULAR 3D, PION, DADU, PARTIKEL)
+// ============================================================================
+const container = document.getElementById("canvas-container");
+const scene = new THREE.Scene();
+
+const THEMES = {
+  pink: {
+    bgTop: "#3b1544", bgBottom: "#170b24",
+    tileA: "#fff5fa", tileB: "#fce0ef",
+    frame: "#be185d", rim: "#fbbf24",
+    snakeBody: "#ec4899", snakeStripe: "#fbcfe8"
+  },
+  royal: {
+    bgTop: "#1e2959", bgBottom: "#0c1229",
+    tileA: "#f4f7ff", tileB: "#dbe6ff",
+    frame: "#1d4ed8", rim: "#38bdf8",
+    snakeBody: "#6366f1", snakeStripe: "#c7d2fe"
+  },
+  forest: {
+    bgTop: "#133b2b", bgBottom: "#071c14",
+    tileA: "#f2fbf6", tileB: "#d5f2e3",
+    frame: "#15803d", rim: "#facc15",
+    snakeBody: "#10b981", snakeStripe: "#a7f3d0"
+  }
+};
+let currentTheme = "pink";
+
+const camera = new THREE.PerspectiveCamera(44, window.innerWidth / window.innerHeight, 0.1, 150);
+camera.position.set(0, 14.5, 13.5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+container.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.maxPolarAngle = Math.PI / 2.15;
+controls.minDistance = 7;
+controls.maxDistance = 26;
+controls.target.set(0, 0, 0);
+
+// Pencahayaan 3D Studio
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xfff5e8, 0.95);
+dirLight.position.set(9, 18, 10);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+dirLight.shadow.camera.near = 2;
+dirLight.shadow.camera.far = 45;
+const dShadow = 9.5;
+dirLight.shadow.camera.left = -dShadow;
+dirLight.shadow.camera.right = dShadow;
+dirLight.shadow.camera.top = dShadow;
+dirLight.shadow.camera.bottom = -dShadow;
+dirLight.shadow.bias = -0.0005;
+scene.add(dirLight);
+
+const rimLight = new THREE.DirectionalLight(0xf472b6, 0.45);
+rimLight.position.set(-10, 10, -10);
+scene.add(rimLight);
+
+// Skybox Gradient Sphere
+const skyGeo = new THREE.SphereGeometry(65, 32, 16);
+const skyCanvas = document.createElement("canvas");
+skyCanvas.width = 16; skyCanvas.height = 256;
+const skyCtx = skyCanvas.getContext("2d");
+const skyTex = new THREE.CanvasTexture(skyCanvas);
+const skyMat = new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide });
+const skyMesh = new THREE.Mesh(skyGeo, skyMat);
+scene.add(skyMesh);
+
+function updateSkyTheme(themeKey) {
+  const t = THEMES[themeKey];
+  const grad = skyCtx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, t.bgTop);
+  grad.addColorStop(1, t.bgBottom);
+  skyCtx.fillStyle = grad;
+  skyCtx.fillRect(0, 0, 16, 256);
+  skyTex.needsUpdate = true;
+}
+
+// Koordinat Dunia 3D dari Nomor Kotak (1 - 100)
+const TILE_SIZE = 1.15;
+const BOARD_OFFSET = (9 * TILE_SIZE) / 2;
+
+function getTileWorldPos(n) {
+  const idx = Math.max(1, Math.min(100, n)) - 1;
+  const row = Math.floor(idx / 10);
+  const col = (row % 2 === 0) ? (idx % 10) : (9 - (idx % 10));
+  return new THREE.Vector3(
+    col * TILE_SIZE - BOARD_OFFSET,
+    0,
+    (9 - row) * TILE_SIZE - BOARD_OFFSET
+  );
+}
+
+// Kelompok Objek 3D Papan
+const boardGroup = new THREE.Group();
+scene.add(boardGroup);
+
+let baseFrameMesh, rimFrameMesh;
+const tileMeshes = {};
+
+// Membuat Tekstur Ubin 256x256 Crisp dengan Nomor, Ikon Hewan/Bintang/Start/Finish
+function createTileTexture(n, themeKey) {
+  const t = THEMES[themeKey];
+  const c = document.createElement("canvas");
+  c.width = 256; c.height = 256;
+  const ctx = c.getContext("2d");
+
+  const row = Math.floor((n - 1) / 10);
+  const col = (n - 1) % 10;
+  const isAlt = (row + col) % 2 === 1;
+
+  // Warna dasar ubin
+  ctx.fillStyle = isAlt ? t.tileB : t.tileA;
+  if (n === 1) ctx.fillStyle = "#bbf7d0";
+  if (n === 100) ctx.fillStyle = "#fde68a";
+  if (bonusTiles.has(n)) ctx.fillStyle = "#fef08a";
+  ctx.fillRect(0, 0, 256, 256);
+
+  // Border halus ubin
+  ctx.strokeStyle = "rgba(0,0,0,0.08)";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(3, 3, 250, 250);
+
+  // Highlight kotak tangga
+  if (ladders[n]) {
+    ctx.strokeStyle = "#d97706";
+    ctx.lineWidth = 10;
+    ctx.strokeRect(8, 8, 240, 240);
+  }
+
+  // Nomor Kotak
+  ctx.fillStyle = "#1e293b";
+  ctx.font = "900 44px 'Plus Jakarta Sans', sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(String(n), 18, 16);
+
+  // Label START / FINISH
+  if (n === 1) {
+    ctx.fillStyle = "#15803d";
+    ctx.font = "900 32px 'Plus Jakarta Sans', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("MULAI", 128, 145);
+  } else if (n === 100) {
+    ctx.fillStyle = "#b45309";
+    ctx.font = "900 32px 'Plus Jakarta Sans', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("🏆 FINIS", 128, 145);
+  }
+
+  // Emoji Spesial (Hewan Penjaga, Bintang Bonus, Ular)
+  let icon = "";
+  if (animalTiles[n]) icon = animalTiles[n].emoji;
+  else if (bonusTiles.has(n)) icon = "⭐";
+  else if (snakes[n]) icon = "🐍";
+
+  if (icon) {
+    ctx.font = "112px serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(icon, 134, 146);
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+
+function buildBoard3D() {
+  // Hapus papan lama jika ganti tema
+  while (boardGroup.children.length > 0) {
+    boardGroup.remove(boardGroup.children[0]);
+  }
+  const t = THEMES[currentTheme];
+  updateSkyTheme(currentTheme);
+
+  // Alas Papan Utama 3D
+  const boardSpan = 10 * TILE_SIZE + 0.9;
+  const baseGeo = new THREE.BoxGeometry(boardSpan, 0.55, boardSpan);
+  const baseMat = new THREE.MeshStandardMaterial({ color: t.frame, roughness: 0.4, metalness: 0.15 });
+  baseFrameMesh = new THREE.Mesh(baseGeo, baseMat);
+  baseFrameMesh.position.y = -0.32;
+  baseFrameMesh.receiveShadow = true;
+  baseFrameMesh.castShadow = true;
+  boardGroup.add(baseFrameMesh);
+
+  // Lis Emas / Aksen di Sekeliling Papan
+  const rimGeo = new THREE.BoxGeometry(boardSpan + 0.24, 0.22, boardSpan + 0.24);
+  const rimMat = new THREE.MeshStandardMaterial({ color: t.rim, roughness: 0.25, metalness: 0.65 });
+  rimFrameMesh = new THREE.Mesh(rimGeo, rimMat);
+  rimFrameMesh.position.y = -0.22;
+  boardGroup.add(rimFrameMesh);
+
+  // 100 Ubin 3D
+  const tileGeo = new THREE.BoxGeometry(TILE_SIZE * 0.96, 0.12, TILE_SIZE * 0.96);
+  for (let n = 1; n <= 100; n++) {
+    const pos = getTileWorldPos(n);
+    const tex = createTileTexture(n, currentTheme);
+    const sideMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.5 });
+    const topMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.35, metalness: 0.05 });
+    const mesh = new THREE.Mesh(tileGeo, [sideMat, sideMat, topMat, sideMat, sideMat, sideMat]);
+    mesh.position.set(pos.x, 0, pos.z);
+    mesh.receiveShadow = true;
+    boardGroup.add(mesh);
+    tileMeshes[n] = mesh;
+  }
+
+  // Bangun Semua Tangga Kayu 3D Prosedural
+  buildLadders3D();
+
+  // Bangun Semua Ular 3D Melengkung
+  buildSnakes3D();
+}
+
+// Tangga 3D (Dua Tiang Silinder Kayu + Anak Tangga 3D)
+function buildLadders3D() {
+  const railMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.45, metalness: 0.1 });
+  const rungMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.4, metalness: 0.15 });
+  const ladderWidth = 0.44;
+
+  Object.entries(ladders).forEach(([startStr, endNum]) => {
+    const p1 = getTileWorldPos(Number(startStr));
+    const p2 = getTileWorldPos(endNum);
+    p1.y = 0.12;
+    p2.y = 0.16;
+
+    const dir = new THREE.Vector3().subVectors(p2, p1);
+    const length = dir.length();
+    const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+    const up = new THREE.Vector3(0, 1, 0);
+    const side = new THREE.Vector3().crossVectors(dir.clone().normalize(), up).normalize();
+
+    const ladderObj = new THREE.Group();
+
+    // 2 Tiang Samping
+    [-1, 1].forEach(sign => {
+      const railGeo = new THREE.CylinderGeometry(0.045, 0.045, length, 12);
+      const rail = new THREE.Mesh(railGeo, railMat);
+      rail.position.copy(mid).addScaledVector(side, sign * (ladderWidth / 2));
+      rail.quaternion.setFromUnitVectors(up, dir.clone().normalize());
+      rail.castShadow = true;
+      ladderObj.add(rail);
+    });
+
+    // Anak Tangga
+    const rungCount = Math.max(4, Math.floor(length / 0.36));
+    const rungGeo = new THREE.CylinderGeometry(0.032, 0.032, ladderWidth, 10);
+    for (let i = 1; i < rungCount; i++) {
+      const t = i / rungCount;
+      const rungPos = new THREE.Vector3().lerpVectors(p1, p2, t);
+      const rung = new THREE.Mesh(rungGeo, rungMat);
+      rung.position.copy(rungPos);
+      rung.quaternion.setFromUnitVectors(up, side);
+      rung.castShadow = true;
+      ladderObj.add(rung);
+    }
+
+    boardGroup.add(ladderObj);
+  });
+}
+
+// Ular 3D Melengkung dengan TubeGeometry + Kepala & Lidah Bercabang
+function buildSnakes3D() {
+  const t = THEMES[currentTheme];
+  const bodyMat = new THREE.MeshStandardMaterial({ color: t.snakeBody, roughness: 0.32, metalness: 0.15 });
+  const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+  const tongueMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+
+  Object.entries(snakes).forEach(([headStr, tailNum], idx) => {
+    const pHead = getTileWorldPos(Number(headStr));
+    const pTail = getTileWorldPos(tailNum);
+    pHead.y = 0.24;
+    pTail.y = 0.14;
+
+    const dir = new THREE.Vector3().subVectors(pTail, pHead);
+    const side = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+    const waveSign = idx % 2 === 0 ? 1 : -1;
+
+    // Buat 5 titik kurva bergelombang 3D di atas papan
+    const pts = [
+      pHead.clone(),
+      new THREE.Vector3().lerpVectors(pHead, pTail, 0.25).addScaledVector(side, 0.45 * waveSign).setY(0.32),
+      new THREE.Vector3().lerpVectors(pHead, pTail, 0.52).addScaledVector(side, -0.48 * waveSign).setY(0.28),
+      new THREE.Vector3().lerpVectors(pHead, pTail, 0.78).addScaledVector(side, 0.38 * waveSign).setY(0.22),
+      pTail.clone()
+    ];
+
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const tubeGeo = new THREE.TubeGeometry(curve, 36, 0.11, 12, false);
+    const snakeMesh = new THREE.Mesh(tubeGeo, bodyMat);
+    snakeMesh.castShadow = true;
+    boardGroup.add(snakeMesh);
+
+    // Kepala Ular 3D di Titik Awal (Mulut Ular)
+    const headGroup = new THREE.Group();
+    headGroup.position.copy(pHead);
+    headGroup.position.y += 0.06;
+
+    const headGeo = new THREE.SphereGeometry(0.21, 16, 16);
+    headGeo.scale(1.1, 0.75, 1.3);
+    const headMesh = new THREE.Mesh(headGeo, bodyMat);
+    headMesh.castShadow = true;
+    headGroup.add(headMesh);
+
+    // Mata Kiri & Kanan
+    [-0.1, 0.1].forEach(ex => {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 10), eyeWhiteMat);
+      eye.position.set(ex, 0.11, 0.12);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), pupilMat);
+      pupil.position.set(ex, 0.12, 0.16);
+      headGroup.add(eye, pupil);
+    });
+
+    // Lidah Merah
+    const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.015, 0.22), tongueMat);
+    tongue.position.set(0, -0.02, 0.3);
+    headGroup.add(tongue);
+
+    // Arahkan kepala sedikit menuju ekor
+    headGroup.lookAt(pts[1]);
+    boardGroup.add(headGroup);
+  });
+}
+
+// ============================================================================
+// 4. PION PEMAIN 3D & DADU 3D FISIK
+// ============================================================================
+const PLAYER_COLORS = [
+  { name: "Hitam", main: 0x1e1b2e, accent: 0xf472b6, css: "bg-slate-900 text-white border-pink-400" },
+  { name: "Pink", main: 0xec4899, accent: 0xfce7f3, css: "bg-pink-500 text-white border-white" },
+  { name: "Biru", main: 0x0284c7, accent: 0xbae6fd, css: "bg-sky-600 text-white border-sky-200" },
+  { name: "Emas", main: 0xd97706, accent: 0xfef08a, css: "bg-amber-500 text-slate-900 border-amber-200" }
+];
+
+const pawnMeshes = [];
+const pawnGroup = new THREE.Group();
+scene.add(pawnGroup);
+
+function createPawnMesh(playerIdx) {
+  const cfg = PLAYER_COLORS[playerIdx];
+  const g = new THREE.Group();
+
+  const bodyMat = new THREE.MeshStandardMaterial({ color: cfg.main, roughness: 0.22, metalness: 0.35 });
+  const ringMat = new THREE.MeshStandardMaterial({ color: cfg.accent, roughness: 0.2, metalness: 0.7 });
+
+  // Alas Cincin
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.12, 20), ringMat);
+  base.position.y = 0.06;
+  base.castShadow = true;
+
+  // Badan Kerucut Halus
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.22, 0.46, 20), bodyMat);
+  body.position.y = 0.34;
+  body.castShadow = true;
+
+  // Kerah Cincin
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.025, 10, 20), ringMat);
+  collar.rotation.x = Math.PI / 2;
+  collar.position.y = 0.56;
+
+  // Kepala Bulat Pion
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 20, 20), bodyMat);
+  head.position.y = 0.68;
+  head.castShadow = true;
+
+  // Perisai Aura (Muncul saat pemain punya Perisai Anti-Ular)
+  const shieldGeo = new THREE.SphereGeometry(0.45, 20, 20);
+  const shieldMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.28, wireframe: true });
+  const shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+  shieldMesh.position.y = 0.42;
+  shieldMesh.visible = false;
+  shieldMesh.name = "shieldAura";
+
+  g.add(base, body, collar, head, shieldMesh);
+  return g;
+}
+
+function rebuildPawns(count) {
+  while (pawnGroup.children.length > 0) pawnGroup.remove(pawnGroup.children[0]);
+  pawnMeshes.length = 0;
+  for (let i = 0; i < count; i++) {
+    const p = createPawnMesh(i);
+    pawnGroup.add(p);
+    pawnMeshes.push(p);
+  }
+  syncPawnPositionsInstant();
+}
+
+function getSlotOffset(playerIdx, totalPlayers) {
+  if (totalPlayers === 1) return new THREE.Vector3(0, 0, 0);
+  const angle = (playerIdx / totalPlayers) * Math.PI * 2 + Math.PI / 4;
+  return new THREE.Vector3(Math.cos(angle) * 0.22, 0, Math.sin(angle) * 0.22);
+}
+
+function syncPawnPositionsInstant() {
+  pawnMeshes.forEach((mesh, i) => {
+    const tilePos = getTileWorldPos(pos[i]);
+    const offset = getSlotOffset(i, pos.length);
+    mesh.position.set(tilePos.x + offset.x, 0.06, tilePos.z + offset.z);
+    const aura = mesh.getObjectByName("shieldAura");
+    if (aura) aura.visible = (powerups[i]?.shield > 0);
+  });
+}
+
+// Dadu 3D Mengambang di Sisi Papan
+const dice3DGroup = new THREE.Group();
+dice3DGroup.position.set(-7.2, 2.2, 3.5);
+scene.add(dice3DGroup);
+
+function createDiceFaceTex(num) {
+  const c = document.createElement("canvas");
+  c.width = 256; c.height = 256;
+  const ctx = c.getContext("2d");
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.strokeStyle = "#f472b6";
+  ctx.lineWidth = 14;
+  ctx.strokeRect(7, 7, 242, 242);
+
+  const pips = {
+    1: [[128, 128]],
+    2: [[72, 72], [184, 184]],
+    3: [[68, 68], [128, 128], [188, 188]],
+    4: [[72, 72], [184, 72], [72, 184], [184, 184]],
+    5: [[72, 72], [184, 72], [128, 128], [72, 184], [184, 184]],
+    6: [[72, 64], [184, 64], [72, 128], [184, 128], [72, 192], [184, 192]]
+  };
+
+  ctx.fillStyle = (num === 1 || num === 6) ? "#e11d48" : "#1e1b4b";
+  pips[num].forEach(([px, py]) => {
+    ctx.beginPath();
+    ctx.arc(px, py, 24, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  return new THREE.CanvasTexture(c);
+}
+
+// Urutan sisi BoxGeometry Three.js: +X(3), -X(4), +Y(1), -Y(6), +Z(2), -Z(5)
+const diceMaterials = [3, 4, 1, 6, 2, 5].map(n =>
+  new THREE.MeshStandardMaterial({ map: createDiceFaceTex(n), roughness: 0.2, metalness: 0.1 })
+);
+const diceMesh = new THREE.Mesh(new THREE.BoxGeometry(1.35, 1.35, 1.35), diceMaterials);
+diceMesh.castShadow = true;
+dice3DGroup.add(diceMesh);
+
+const DICE_TARGET_ROT = {
+  1: new THREE.Euler(0, 0, 0),
+  6: new THREE.Euler(Math.PI, 0, 0),
+  2: new THREE.Euler(-Math.PI / 2, 0, 0),
+  5: new THREE.Euler(Math.PI / 2, 0, 0),
+  3: new THREE.Euler(0, 0, Math.PI / 2),
+  4: new THREE.Euler(0, 0, -Math.PI / 2)
+};
+
+let diceAnim = { active: false, elapsed: 0, duration: 0.75, targetEuler: new THREE.Euler() };
+
+function triggerDice3D(resultNum) {
+  diceAnim.active = true;
+  diceAnim.elapsed = 0;
+  diceAnim.targetEuler = DICE_TARGET_ROT[resultNum].clone();
+}
+
+// Sistem Partikel Konfeti 3D
+const confettiParticles = [];
+const confettiGroup = new THREE.Group();
+scene.add(confettiGroup);
+
+function spawnConfetti3D(originPos, count = 75) {
+  const colors = [0xf43f5e, 0xfbbf24, 0x34d399, 0x38bdf8, 0xc084fc];
+  const geo = new THREE.PlaneGeometry(0.18, 0.12);
+  for (let i = 0; i < count; i++) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: colors[i % colors.length],
+      side: THREE.DoubleSide
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.copy(originPos);
+    m.position.y += 1.2;
+    confettiGroup.add(m);
+    confettiParticles.push({
+      mesh: m,
+      vel: new THREE.Vector3(
+        (Math.random() - 0.5) * 6,
+        Math.random() * 6 + 3,
+        (Math.random() - 0.5) * 6
+      ),
+      rotSpeed: new THREE.Vector3(Math.random() * 8, Math.random() * 8, Math.random() * 8),
+      life: 2.2
+    });
+  }
+}
+
+// ============================================================================
+// 5. ANIMASI LOMPATAN PION PARABOLA & KAMERA
+// ============================================================================
+let pawnAnimations = []; // Queue animasi langkah demi langkah
+
+function animatePawnPath(playerIdx, fromTile, toTile, onComplete) {
+  if (fromTile === toTile) {
+    if (onComplete) onComplete();
+    return;
+  }
+  const stepDir = toTile > fromTile ? 1 : -1;
+  const steps = [];
+  for (let t = fromTile + stepDir; stepDir > 0 ? t <= toTile : t >= toTile; t += stepDir) {
+    steps.push(t);
+  }
+
+  let idx = 0;
+  function nextStep() {
+    if (idx >= steps.length) {
+      syncPawnPositionsInstant();
+      if (onComplete) onComplete();
+      return;
+    }
+    const targetTile = steps[idx++];
+    const mesh = pawnMeshes[playerIdx];
+    const startPos = mesh.position.clone();
+    const tileWorld = getTileWorldPos(targetTile);
+    const offset = getSlotOffset(playerIdx, pos.length);
+    const endPos = new THREE.Vector3(tileWorld.x + offset.x, 0.06, tileWorld.z + offset.z);
+
+    playTone("step");
+    pawnAnimations.push({
+      mesh,
+      startPos,
+      endPos,
+      arcHeight: 0.65,
+      elapsed: 0,
+      duration: 0.19,
+      onDone: nextStep
+    });
+  }
+  nextStep();
+}
+
+function animatePawnSlide(playerIdx, toTile, isLadder, onComplete) {
+  const mesh = pawnMeshes[playerIdx];
+  const startPos = mesh.position.clone();
+  const tileWorld = getTileWorldPos(toTile);
+  const offset = getSlotOffset(playerIdx, pos.length);
+  const endPos = new THREE.Vector3(tileWorld.x + offset.x, 0.06, tileWorld.z + offset.z);
+
+  playTone(isLadder ? "ladder" : "snake");
+  pawnAnimations.push({
+    mesh,
+    startPos,
+    endPos,
+    arcHeight: isLadder ? 1.4 : 0.4,
+    elapsed: 0,
+    duration: 0.65,
+    onDone: () => {
+      syncPawnPositionsInstant();
+      if (onComplete) onComplete();
+    }
+  });
+}
+
+// Preset Kamera
+let cameraMode = "iso"; // iso | top | follow
+let cameraGoalPos = new THREE.Vector3(0, 14.5, 13.5);
+let cameraGoalTarget = new THREE.Vector3(0, 0, 0);
+let cameraLerpActive = false;
+
+function setCameraPreset(mode) {
+  cameraMode = mode;
+  document.querySelectorAll(".cam-btn").forEach(btn => {
+    const active = btn.dataset.cam === mode;
+    btn.className = active
+      ? "cam-btn px-2.5 py-1.5 rounded-xl text-xs font-extrabold bg-pink-600 text-white transition"
+      : "cam-btn px-2.5 py-1.5 rounded-xl text-xs font-extrabold text-slate-700 hover:bg-white/70 transition";
+  });
+
+  if (mode === "iso") {
+    cameraGoalPos.set(0, 14.5, 13.5);
+    cameraGoalTarget.set(0, 0, 0);
+    cameraLerpActive = true;
+  } else if (mode === "top") {
+    cameraGoalPos.set(0, 18.5, 0.5);
+    cameraGoalTarget.set(0, 0, 0);
+    cameraLerpActive = true;
+  } else if (mode === "follow") {
+    const pMesh = pawnMeshes[turn];
+    if (pMesh) {
+      cameraGoalPos.set(pMesh.position.x, 7.5, pMesh.position.z + 6.5);
+      cameraGoalTarget.copy(pMesh.position);
+      cameraLerpActive = true;
+    }
+  }
+}
+
+// ============================================================================
+// 6. GAMEPLAY STATE, POWER-UPS, STREAK, TIMER KUIS & LOGIKA PERMAINAN
+// ============================================================================
+let playerCount = 2;
+let pos = [1, 1];
+let turn = 0;
+let move = 0;
+let stage = "main";
+let finished = false;
+let gameMode = "pvp"; // pvp | bot | fast
+let penaltySteps = 2; // 2 | 4 | 0
+let timerEnabled = true;
+let quizTimerInterval = null;
+let quizTimeLeft = 20;
+
+let stats = [];
+let powerups = []; // [{ shield: 1, double: 0, hint5050: 1 }, ...]
+let activeDoubleDice = false;
+
+function initPlayerData(count) {
+  pos = Array(count).fill(1);
+  stats = Array.from({ length: count }, () => ({ ok: 0, bad: 0, score: 0, streak: 0 }));
+  powerups = Array.from({ length: count }, () => ({ shield: 1, double: 1, hint5050: 1 }));
+  activeDoubleDice = false;
+  rebuildPawns(count);
+}
+
+function showToast(msg) {
+  const box = document.getElementById("toastBox");
+  document.getElementById("toastText").textContent = msg;
+  box.classList.remove("opacity-0", "-translate-y-4");
+  box.classList.add("opacity-100", "translate-y-0");
+  clearTimeout(box._t);
+  box._t = setTimeout(() => {
+    box.classList.add("opacity-0", "-translate-y-4");
+    box.classList.remove("opacity-100", "translate-y-0");
+  }, 2600);
+}
+
+function addLog(text) {
+  const list = document.getElementById("logList");
+  const item = document.createElement("div");
+  item.className = "px-2 py-1 rounded-lg bg-white/75 border border-slate-200/70";
+  item.textContent = text;
+  list.prepend(item);
+  if (list.children.length > 30) list.removeChild(list.lastChild);
+}
+
+function playerName(idx) {
+  if (gameMode === "bot" && idx === 1) return "Bot AI";
+  return `Pemain ${idx + 1}`;
+}
+
+function grantRandomPowerup(playerIdx, reasonText) {
+  const keys = ["shield", "double", "hint5050"];
+  const labels = { shield: "🛡️ Perisai Anti-Ular", double: "🎲 Dadu Ganda", hint5050: "💡 Petunjuk 50:50" };
+  const chosen = keys[Math.floor(Math.random() * keys.length)];
+  powerups[playerIdx][chosen]++;
+  syncPawnPositionsInstant();
+  showToast(`${playerName(playerIdx)} dapat ${labels[chosen]}!`);
+  addLog(`🎁 ${playerName(playerIdx)} mendapat ${labels[chosen]} (${reasonText}).`);
+  renderHUD();
+}
+
+function renderHUD() {
+  const list = document.getElementById("playerList");
+  list.innerHTML = "";
+
+  pos.forEach((p, i) => {
+    const isTurn = turn === i && !finished;
+    const cfg = PLAYER_COLORS[i];
+    const pu = powerups[i];
+    const st = stats[i];
+
+    const card = document.createElement("div");
+    card.className = `p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+      isTurn ? "bg-white border-pink-500 ring-2 ring-pink-300 shadow-md" : "bg-white/65 border-slate-200/80"
+    }`;
+
+    card.innerHTML = `
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black border-2 shrink-0 ${cfg.css}">
+          ${i + 1}
+        </span>
+        <div class="truncate">
+          <div class="text-xs font-black text-slate-800 truncate">
+            ${gameMode === "bot" && i === 1 ? "🤖 " : ""}${playerName(i)}
+            ${st.streak >= 2 ? `<span class="text-[10px] text-amber-600">🔥${st.streak}</span>` : ""}
+          </div>
+          <div class="text-[10px] font-bold text-slate-500 flex items-center gap-1.5">
+            <span>⭐ ${st.score} pts</span>
+            <span>•</span>
+            <span>🛡️${pu.shield} 🎲${pu.double} 💡${pu.hint5050}</span>
+          </div>
+        </div>
+      </div>
+      <div class="px-2.5 py-1 rounded-lg bg-pink-50 border border-pink-200 text-xs font-black text-pink-700 shrink-0">
+        #${p}
+      </div>
+    `;
+    list.appendChild(card);
+  });
+
+  // Render Tombol Power-Up Giliran Aktif
+  const puBar = document.getElementById("powerupButtons");
+  const curPu = powerups[turn];
+  const isBotTurn = gameMode === "bot" && turn === 1;
+  const rollDisabled = document.getElementById("roll").disabled;
+
+  puBar.innerHTML = `
+    <button id="btnUseDouble" ${curPu.double <= 0 || activeDoubleDice || isBotTurn || rollDisabled || finished ? "disabled" : ""}
+      class="p-1.5 rounded-xl border text-[11px] font-extrabold flex flex-col items-center transition ${
+        activeDoubleDice
+          ? "bg-amber-400 border-amber-500 text-slate-900"
+          : "bg-white/85 border-slate-200 text-slate-700 hover:bg-amber-50 disabled:opacity-40"
+      }">
+      <span>🎲 2x (${curPu.double})</span>
+      <span class="text-[9px] font-semibold opacity-75">${activeDoubleDice ? "AKTIF!" : "Dadu Ganda"}</span>
+    </button>
+    <div class="p-1.5 rounded-xl border border-slate-200 bg-white/75 text-[11px] font-extrabold text-slate-700 flex flex-col items-center">
+      <span>🛡️ (${curPu.shield})</span>
+      <span class="text-[9px] font-semibold opacity-75">Otomatis Ular</span>
+    </div>
+    <div class="p-1.5 rounded-xl border border-slate-200 bg-white/75 text-[11px] font-extrabold text-slate-700 flex flex-col items-center">
+      <span>💡 (${curPu.hint5050})</span>
+      <span class="text-[9px] font-semibold opacity-75">Saat Kuis</span>
+    </div>
+  `;
+
+  const btnDouble = document.getElementById("btnUseDouble");
+  if (btnDouble) {
+    btnDouble.onclick = () => {
+      if (powerups[turn].double > 0 && !activeDoubleDice) {
+        powerups[turn].double--;
+        activeDoubleDice = true;
+        playTone("ok");
+        showToast("🎲 Dadu Ganda Aktif! Langkah berikutnya dikali 2!");
+        addLog(`⚡ ${playerName(turn)} mengaktifkan Dadu Ganda (2x)!`);
+        renderHUD();
+      }
+    };
+  }
+
+  // Badge Streak
+  const streakBadge = document.getElementById("streakBadge");
+  if (stats[turn].streak >= 2) {
+    streakBadge.textContent = `🔥 Streak x${stats[turn].streak}`;
+    streakBadge.classList.remove("hidden");
+  } else {
+    streakBadge.classList.add("hidden");
+  }
+}
+
+// ============================================================================
+// 7. ALUR PERMAINAN, KUIS & BOT AI
+// ============================================================================
+function evaluateLanding(landingMsg) {
+  let p = pos[turn];
+  if (p >= 100) { endTurn(); return; }
+
+  // 1. Cek Kotak Bintang Bonus (+2 kotak + Kartu Aksi)
+  if (bonusTiles.has(p)) {
+    const target = Math.min(100, p + 2);
+    playTone("ok");
+    stats[turn].score += 50;
+    addLog(`⭐ ${playerName(turn)} menginjak Bintang Bonus! Melompat +2 kotak.`);
+    grantRandomPowerup(turn, "Kotak Bintang");
+    pos[turn] = target;
+    animatePawnPath(turn, p, target, () => {
+      if (pos[turn] >= 100) { endTurn(); return; }
+      checkSnakesAndLadders(landingMsg);
+    });
+    return;
+  }
+
+  checkSnakesAndLadders(landingMsg);
+}
+
+function checkSnakesAndLadders(landingMsg) {
+  const p = pos[turn];
+
+  // Cek Tangga
+  if (ladders[p]) {
+    const dest = ladders[p];
+    pos[turn] = dest;
+    stats[turn].score += 75;
+    addLog(`🪜 ${playerName(turn)} naik tangga 3D (${p} → ${dest})!`);
+    spawnConfetti3D(getTileWorldPos(dest), 35);
+    animatePawnSlide(turn, dest, true, () => {
+      endTurn(`🪜 Hebat! ${playerName(turn)} naik tangga ke kotak ${dest}!`);
+    });
+    return;
+  }
+
+  // Cek Ular
+  if (snakes[p]) {
+    // Cek apakah pemain punya Perisai Anti-Ular
+    if (powerups[turn].shield > 0) {
+      powerups[turn].shield--;
+      syncPawnPositionsInstant();
+      playTone("ok");
+      showToast(`🛡️ Perisai menyelamatkan ${playerName(turn)} dari ular!`);
+      addLog(`🛡️ ${playerName(turn)} menangkis ular di kotak ${p} dengan Perisai!`);
+      endTurn(`🛡️ Perisai aktif! ${playerName(turn)} selamat dari gigitan ular!`);
+      return;
+    }
+
+    const dest = snakes[p];
+    pos[turn] = dest;
+    addLog(`🐍 ${playerName(turn)} tergelincir ular 3D (${p} → ${dest}).`);
+    animatePawnSlide(turn, dest, false, () => {
+      endTurn(`🐍 Oops! Digigit ular, turun ke kotak ${dest}.`);
+    });
+    return;
+  }
+
+  endTurn(landingMsg || `Giliran ${playerName((turn + 1) % pos.length)}!`);
+}
+
+function clearQuizTimer() {
+  if (quizTimerInterval) {
+    clearInterval(quizTimerInterval);
+    quizTimerInterval = null;
+  }
+}
+
+function openQuestion(q, title, type) {
+  stage = type;
+  const quizModal = document.getElementById("quiz");
+  document.getElementById("qBadge").textContent = type === "main" ? "📚 Kuis Sejarah Orde Baru" : "🐾 Tantangan Hewan Penjaga";
+  document.getElementById("qtitle").textContent = title;
+  document.getElementById("question").textContent = q[0];
+
+  const ansBox = document.getElementById("answers");
+  ansBox.innerHTML = "";
+  const feedbackEl = document.getElementById("feedback");
+  feedbackEl.textContent = "";
+  const contBtn = document.getElementById("continue");
+  contBtn.classList.add("hidden");
+
+  // Tombol 50:50
+  const btn5050 = document.getElementById("use5050Btn");
+  const count5050 = document.getElementById("count5050");
+  if (powerups[turn].hint5050 > 0 && q[1].length >= 4) {
+    btn5050.classList.remove("hidden");
+    count5050.textContent = powerups[turn].hint5050;
+    btn5050.disabled = false;
+    btn5050.onclick = () => {
+      if (powerups[turn].hint5050 <= 0) return;
+      powerups[turn].hint5050--;
+      btn5050.classList.add("hidden");
+      renderHUD();
+      const wrongIndices = [0, 1, 2, 3].filter(idx => idx !== q[2]);
+      wrongIndices.sort(() => Math.random() - 0.5).slice(0, 2).forEach(wIdx => {
+        const b = ansBox.children[wIdx];
+        if (b) { b.disabled = true; b.classList.add("opacity-30", "line-through"); }
+      });
+      playTone("step");
+      showToast("💡 2 jawaban salah dihilangkan!");
+    };
+  } else {
+    btn5050.classList.add("hidden");
+  }
+
+  function handleAnswer(selectedIdx, isTimeout = false) {
+    clearQuizTimer();
+    btn5050.classList.add("hidden");
+    [...ansBox.children].forEach(b => b.disabled = true);
+
+    const ok = !isTimeout && (selectedIdx === q[2]);
+    if (ok) {
+      ansBox.children[selectedIdx].classList.add("border-emerald-500", "bg-emerald-50", "text-emerald-900");
+      stats[turn].ok++;
+      stats[turn].streak++;
+      const timeBonus = timerEnabled ? quizTimeLeft * 5 : 50;
+      stats[turn].score += (100 + timeBonus);
+      playTone("ok");
+      spawnConfetti3D(pawnMeshes[turn].position, 28);
+
+      // Hadiah kartu aksi setiap 2 streak benar
+      if (stats[turn].streak > 0 && stats[turn].streak % 2 === 0) {
+        grantRandomPowerup(turn, `Streak ${stats[turn].streak}x Benar`);
+      }
+    } else {
+      if (!isTimeout && selectedIdx >= 0) {
+        ansBox.children[selectedIdx].classList.add("border-rose-500", "bg-rose-50", "text-rose-900");
+      }
+      ansBox.children[q[2]].classList.add("border-emerald-500", "bg-emerald-50", "text-emerald-900");
+      stats[turn].bad++;
+      stats[turn].streak = 0;
+      playTone("bad");
+    }
+
+    if (type === "main") {
+      if (ok) {
+        feedbackEl.className = "mt-4 text-sm font-extrabold text-center text-emerald-700";
+        feedbackEl.textContent = `✅ Tepat Sekali! ${playerName(turn)} maju ${move} kotak (+${100 + (timerEnabled ? quizTimeLeft * 5 : 50)} poin).`;
+        addLog(`✅ ${playerName(turn)} benar (+${move} langkah).`);
+      } else {
+        feedbackEl.className = "mt-4 text-sm font-extrabold text-center text-rose-600";
+        feedbackEl.textContent = isTimeout
+          ? `⏰ Waktu Habis! ${penaltySteps > 0 ? `Mundur ${penaltySteps} kotak.` : "Posisi tetap (Mode Santai)."}`
+          : `❌ Kurang Tepat! ${penaltySteps > 0 ? `Mundur ${penaltySteps} kotak.` : "Posisi tetap (Mode Santai)."}`;
+        addLog(`❌ ${playerName(turn)} ${isTimeout ? "kehabisan waktu" : "salah jawab"}.`);
+      }
+    } else {
+      const animal = animalTiles[pos[turn]];
+      if (ok) {
+        feedbackEl.className = "mt-4 text-sm font-extrabold text-center text-emerald-700";
+        feedbackEl.textContent = `🐾 Hebat! Tantangan ${animal.name} berhasil! Maju +1 kotak menuju tangga!`;
+        addLog(`🐾 ${playerName(turn)} lolos tantangan ${animal.name} (+1 kotak).`);
+      } else {
+        feedbackEl.className = "mt-4 text-sm font-extrabold text-center text-rose-600";
+        feedbackEl.textContent = `🐾 Tantangan ${animal.name} gagal! ${penaltySteps > 0 ? `Mundur ${penaltySteps} kotak.` : "Aman di Mode Santai."}`;
+        addLog(`🐾 ${playerName(turn)} gagal tantangan ${animal.name}.`);
+      }
+    }
+
+    quizModal._lastOk = ok;
+    renderHUD();
+    contBtn.classList.remove("hidden");
+  }
+
+  q[1].forEach((optText, i) => {
+    const b = document.createElement("button");
+    b.className = "w-full text-left px-4 py-3 rounded-2xl border-2 border-slate-200 bg-slate-50/70 hover:bg-pink-50 hover:border-pink-400 font-bold text-sm text-slate-800 transition";
+    b.textContent = `${String.fromCharCode(65 + i)}. ${optText}`;
+    b.onclick = () => handleAnswer(i, false);
+    ansBox.appendChild(b);
+  });
+
+  // Timer Kuis
+  const timerBox = document.getElementById("quizTimerBox");
+  const timerText = document.getElementById("quizTimerText");
+  clearQuizTimer();
+  if (timerEnabled) {
+    timerBox.classList.remove("hidden");
+    quizTimeLeft = 20;
+    timerText.textContent = quizTimeLeft;
+    quizTimerInterval = setInterval(() => {
+      quizTimeLeft--;
+      timerText.textContent = Math.max(0, quizTimeLeft);
+      if (quizTimeLeft <= 0) handleAnswer(-1, true);
+    }, 1000);
+  } else {
+    timerBox.classList.add("hidden");
+  }
+
+  quizModal.classList.remove("hidden");
+  quizModal.classList.add("flex");
+}
+
+document.getElementById("continue").onclick = () => {
+  const quizModal = document.getElementById("quiz");
+  quizModal.classList.add("hidden");
+  quizModal.classList.remove("flex");
+  const ok = quizModal._lastOk;
+
+  const oldTile = pos[turn];
+  let newTile = oldTile;
+
+  if (stage === "main") {
+    newTile = ok ? Math.min(100, oldTile + move) : Math.max(1, oldTile - penaltySteps);
+    pos[turn] = newTile;
+    animatePawnPath(turn, oldTile, newTile, () => {
+      if (pos[turn] >= 100) { endTurn(); return; }
+      if (animalTiles[pos[turn]]) {
+        const a = animalTiles[pos[turn]];
+        const q = a.question[Math.floor(Math.random() * a.question.length)];
+        openQuestion(q, `${a.emoji} TANTANGAN ${a.name}`, "animal");
+        return;
+      }
+      evaluateLanding(`Giliran ${playerName((turn + 1) % pos.length)}!`);
+    });
+  } else {
+    newTile = ok ? Math.min(100, oldTile + 1) : Math.max(1, oldTile - penaltySteps);
+    pos[turn] = newTile;
+    animatePawnPath(turn, oldTile, newTile, () => {
+      evaluateLanding(`Tantangan selesai. Giliran ${playerName((turn + 1) % pos.length)}!`);
+    });
+  }
+};
+
+function rollDiceAction() {
+  if (finished || document.getElementById("roll").disabled) return;
+  let d = Math.floor(Math.random() * 6) + 1;
+  triggerDice3D(d);
+  playTone("dice");
+
+  if (activeDoubleDice) {
+    move = d * 2;
+    activeDoubleDice = false;
+    document.getElementById("diceValueText").textContent = `${d} × 2 = ${move} Langkah!`;
+  } else {
+    move = d;
+    document.getElementById("diceValueText").textContent = `Angka ${d}`;
+  }
+
+  document.getElementById("diceDisplay").textContent = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"][d - 1];
+  const rollBtn = document.getElementById("roll");
+  rollBtn.disabled = true;
+  rollBtn.classList.remove("btn-roll-ready");
+  renderHUD();
+
+  if (cameraMode === "follow") setCameraPreset("follow");
+
+  // Mode Kilat: Langsung melangkah tanpa kuis sejarah utama
+  if (gameMode === "fast") {
+    const oldTile = pos[turn];
+    const newTile = Math.min(100, oldTile + move);
+    pos[turn] = newTile;
+    stats[turn].score += move * 15;
+    addLog(`⚡ ${playerName(turn)} lempar dadu ${move} → kotak ${newTile}.`);
+    animatePawnPath(turn, oldTile, newTile, () => {
+      if (pos[turn] >= 100) { endTurn(); return; }
+      if (animalTiles[pos[turn]]) {
+        const a = animalTiles[pos[turn]];
+        const q = a.question[Math.floor(Math.random() * a.question.length)];
+        openQuestion(q, `${a.emoji} TANTANGAN ${a.name}`, "animal");
+        return;
+      }
+      evaluateLanding(`⚡ ${playerName(turn)} mendarat di kotak ${newTile}.`);
+    });
+    return;
+  }
+
+  document.getElementById("status").textContent = `🎲 ${playerName(turn)} dapat ${move} langkah! Jawab kuis untuk melangkah!`;
+  setTimeout(() => {
+    const idx = Math.floor(Math.random() * questions.length);
+    openQuestion(questions[idx], "SOAL SEJARAH ORDE BARU", "main");
+  }, 550);
+}
+
+document.getElementById("roll").onclick = rollDiceAction;
+
+// Shortcut Keyboard Spasi untuk Lempar Dadu
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && document.getElementById("quiz").classList.contains("hidden") && document.getElementById("winModal").classList.contains("hidden")) {
+    e.preventDefault();
+    rollDiceAction();
+  }
+});
+
+function endTurn(msg) {
+  renderHUD();
+  if (pos[turn] >= 100) {
+    pos[turn] = 100;
+    syncPawnPositionsInstant();
+    finished = true;
+    stats[turn].score += 500;
+    playTone("win");
+    spawnConfetti3D(getTileWorldPos(100), 140);
+
+    const winMsg = `🏆 ${playerName(turn)} MENANG! Kotak 100 tercapai!`;
+    document.getElementById("status").textContent = winMsg;
+    addLog(winMsg);
+    document.getElementById("roll").disabled = true;
+    showWinModal();
+    return;
+  }
+
+  turn = (turn + 1) % pos.length;
+  activeDoubleDice = false;
+  renderHUD();
+  if (cameraMode === "follow") setCameraPreset("follow");
+
+  if (gameMode === "bot" && turn === 1 && !finished) {
+    document.getElementById("roll").disabled = true;
+    document.getElementById("status").textContent = (msg ? msg + " " : "") + "🤖 Bot AI sedang berpikir & melempar dadu...";
+    setTimeout(runBotTurn, 1000);
+  } else {
+    document.getElementById("status").textContent = msg || `Giliran ${playerName(turn)}.`;
+    const rollBtn = document.getElementById("roll");
+    rollBtn.disabled = false;
+    rollBtn.classList.add("btn-roll-ready");
+    renderHUD();
+  }
+}
+
+function runBotTurn() {
+  if (finished || turn !== 1 || gameMode !== "bot") return;
+  const d = Math.floor(Math.random() * 6) + 1;
+  triggerDice3D(d);
+  playTone("dice");
+  document.getElementById("diceDisplay").textContent = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"][d - 1];
+  document.getElementById("diceValueText").textContent = `Bot: ${d}`;
+
+  const botSmart = Math.random() < 0.72;
+  const oldTile = pos[1];
+  let newTile = oldTile;
+
+  if (gameMode === "fast" || botSmart) {
+    if (gameMode !== "fast") {
+      stats[1].ok++;
+      stats[1].score += 120;
+    }
+    newTile = Math.min(100, oldTile + d);
+    addLog(`🤖 Bot AI jawab benar & maju ${d} kotak (→ ${newTile}).`);
+  } else {
+    stats[1].bad++;
+    newTile = Math.max(1, oldTile - penaltySteps);
+    addLog(`🤖 Bot AI salah jawab (${penaltySteps > 0 ? "-" + penaltySteps + " kotak" : "tetap"}).`);
+  }
+
+  pos[1] = newTile;
+  animatePawnPath(1, oldTile, newTile, () => {
+    const p = pos[1];
+    if (p >= 100) { endTurn(); return; }
+    if (animalTiles[p]) {
+      const animal = animalTiles[p];
+      const aOld = pos[1];
+      let aNew = aOld;
+      if (Math.random() < 0.75) {
+        stats[1].ok++;
+        aNew = Math.min(100, aOld + 1);
+        addLog(`🤖 Bot AI lolos tantangan ${animal.name} (+1 kotak).`);
+      } else {
+        stats[1].bad++;
+        aNew = Math.max(1, aOld - penaltySteps);
+        addLog(`🤖 Bot AI gagal tantangan ${animal.name}.`);
+      }
+      pos[1] = aNew;
+      animatePawnPath(1, aOld, aNew, () => {
+        evaluateLanding(`🤖 Bot AI selesai melangkah (kotak ${pos[1]}). Giliranmu!`);
+      });
+      return;
+    }
+    evaluateLanding(`🤖 Bot AI selesai melangkah (kotak ${pos[1]}). Giliranmu!`);
+  });
+}
+
+function showWinModal() {
+  document.getElementById("winnerTitle").textContent = `🏆 ${playerName(turn)} Juara!`;
+  document.getElementById("winnerSub").textContent = `Menaklukkan seluruh tantangan Orde Baru dengan ${stats[turn].score} poin!`;
+
+  const ranking = pos.map((p, idx) => ({
+    idx,
+    name: playerName(idx),
+    tile: p,
+    score: stats[idx].score,
+    ok: stats[idx].ok,
+    bad: stats[idx].bad
+  })).sort((a, b) => (b.tile - a.tile) || (b.score - a.score));
+
+  const podiumBox = document.getElementById("podiumStats");
+  podiumBox.innerHTML = ranking.map((r, rankIdx) => `
+    <div class="flex items-center justify-between p-2 rounded-xl ${rankIdx === 0 ? "bg-amber-100/80 border border-amber-300" : "bg-slate-50"}">
+      <div class="flex items-center gap-2">
+        <span class="font-black text-sm">${rankIdx === 0 ? "🥇" : rankIdx === 1 ? "🥈" : rankIdx === 2 ? "🥉" : "4."}</span>
+        <div>
+          <div class="text-xs font-black text-slate-800">${r.name}</div>
+          <div class="text-[10px] font-semibold text-slate-500">Benar: ${r.ok} • Salah: ${r.bad}</div>
+        </div>
+      </div>
+      <div class="text-right">
+        <div class="text-xs font-black text-pink-600">${r.score} pts</div>
+        <div class="text-[10px] font-bold text-slate-500">Kotak #${r.tile}</div>
+      </div>
+    </div>
+  `).join("");
+
+  const wm = document.getElementById("winModal");
+  wm.classList.remove("hidden");
+  wm.classList.add("flex");
+}
+
+function resetGame() {
+  clearQuizTimer();
+  turn = 0;
+  finished = false;
+  pawnAnimations = [];
+  initPlayerData(playerCount);
+
+  const rollBtn = document.getElementById("roll");
+  rollBtn.disabled = false;
+  rollBtn.classList.add("btn-roll-ready");
+  document.getElementById("diceDisplay").textContent = "🎲";
+  document.getElementById("diceValueText").textContent = "Siap Lempar";
+  document.getElementById("status").textContent = "Petualangan 3D baru dimulai! Giliran Pemain 1 (Hitam).";
+  document.getElementById("logList").innerHTML = '<div class="px-2 py-1 rounded-lg bg-white/75">🔄 Permainan 3D diulang dari kotak 1.</div>';
+  document.getElementById("winModal").classList.add("hidden");
+  document.getElementById("winModal").classList.remove("flex");
+  renderHUD();
+}
+
+// ============================================================================
+// 8. EVENT LISTENERS UI & NAVBAR
+// ============================================================================
+document.getElementById("modeSelect").onchange = (e) => {
+  const val = e.target.value;
+  if (val.startsWith("pvp")) { gameMode = "pvp"; playerCount = Number(val.slice(3)); }
+  else if (val === "bot") { gameMode = "bot"; playerCount = 2; }
+  else { gameMode = "fast"; playerCount = 2; }
+
+  const badges = { pvp: `LOKAL ${playerCount}P`, bot: "VS BOT AI", fast: "MODE KILAT" };
+  const subs = {
+    pvp: `Mode ${playerCount} Pemain • Bergantian menaklukkan kuis Sejarah Orde Baru!`,
+    bot: "Mode 1P vs Bot AI • Kalahkan kecerdasan buatan menuju kotak 100!",
+    fast: "Mode Kilat • Langsung melompat sesuai dadu, taklukkan hewan penjaga!"
+  };
+  document.getElementById("modeBadge").textContent = badges[gameMode];
+  document.getElementById("subtitle").textContent = subs[gameMode];
+  resetGame();
+};
+
+document.getElementById("levelSelect").onchange = (e) => {
+  const v = e.target.value;
+  penaltySteps = v === "hard" ? 4 : (v === "santuy" ? 0 : 2);
+  showToast(`Level diubah: ${e.target.options[e.target.selectedIndex].text}`);
+};
+
+document.getElementById("themeSelect").onchange = (e) => {
+  currentTheme = e.target.value;
+  buildBoard3D();
+  showToast(`Tema 3D diubah ke ${e.target.options[e.target.selectedIndex].text}`);
+};
+
+document.getElementById("timerToggle").onclick = (e) => {
+  timerEnabled = !timerEnabled;
+  e.target.textContent = timerEnabled ? "⏱️ Timer: ON" : "⏱️ Timer: OFF";
+  showToast(timerEnabled ? "Timer kuis 20 detik diaktifkan" : "Timer kuis dimatikan");
+};
+
+document.getElementById("soundToggle").onclick = (e) => {
+  soundOn = !soundOn;
+  e.target.textContent = soundOn ? "🔊" : "🔇";
+  if (soundOn) playTone("ok");
+};
+
+document.getElementById("openHelp").onclick = () => {
+  document.getElementById("helpModal").classList.remove("hidden");
+  document.getElementById("helpModal").classList.add("flex");
+};
+document.getElementById("closeHelp").onclick =
+document.getElementById("closeHelpTop").onclick = () => {
+  document.getElementById("helpModal").classList.add("hidden");
+  document.getElementById("helpModal").classList.remove("flex");
+};
+
+document.getElementById("navRestart").onclick = resetGame;
+document.getElementById("winRestartBtn").onclick = resetGame;
+document.getElementById("winCloseBtn").onclick = () => {
+  document.getElementById("winModal").classList.add("hidden");
+  document.getElementById("winModal").classList.remove("flex");
+};
+
+document.querySelectorAll(".cam-btn").forEach(btn => {
+  btn.onclick = () => setCameraPreset(btn.dataset.cam);
+});
+
+// Toggle HUD di Mobile
+document.getElementById("toggleHudBtn").onclick = () => {
+  document.getElementById("hudBody").classList.toggle("hidden");
+};
+
+// ============================================================================
+// 9. MAIN 3D RENDER LOOP & RESIZE HANDLER
+// ============================================================================
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+  const elapsedTotal = clock.getElapsedTime();
+
+  // 1. Animasi Dadu 3D
+  if (diceAnim.active) {
+    diceAnim.elapsed += dt;
+    const t = Math.min(1, diceAnim.elapsed / diceAnim.duration);
+    if (t < 1) {
+      diceMesh.rotation.x += dt * 16;
+      diceMesh.rotation.y += dt * 19;
+      diceMesh.rotation.z += dt * 12;
+      dice3DGroup.position.y = 2.2 + Math.sin(t * Math.PI) * 1.6;
+    } else {
+      diceMesh.rotation.copy(diceAnim.targetEuler);
+      dice3DGroup.position.y = 2.2;
+      diceAnim.active = false;
+    }
+  } else {
+    dice3DGroup.position.y = 2.2 + Math.sin(elapsedTotal * 2.5) * 0.12;
+  }
+
+  // 2. Animasi Lompatan Pion Parabola
+  for (let i = pawnAnimations.length - 1; i >= 0; i--) {
+    const anim = pawnAnimations[i];
+    anim.elapsed += dt;
+    const t = Math.min(1, anim.elapsed / anim.duration);
+    anim.mesh.position.lerpVectors(anim.startPos, anim.endPos, t);
+    anim.mesh.position.y += Math.sin(t * Math.PI) * anim.arcHeight;
+    if (t >= 1) {
+      pawnAnimations.splice(i, 1);
+      if (anim.onDone) anim.onDone();
+    }
+  }
+
+  // 3. Animasi Denyut Pion Giliran Aktif & Aura Perisai
+  pawnMeshes.forEach((m, idx) => {
+    const aura = m.getObjectByName("shieldAura");
+    if (aura && aura.visible) aura.rotation.y += dt * 2.2;
+    if (idx === turn && !finished && pawnAnimations.length === 0) {
+      m.position.y = 0.06 + Math.abs(Math.sin(elapsedTotal * 4.5)) * 0.14;
+    }
+  });
+
+  // 4. Animasi Partikel Konfeti 3D
+  for (let i = confettiParticles.length - 1; i >= 0; i--) {
+    const p = confettiParticles[i];
+    p.life -= dt;
+    p.vel.y -= 9.8 * dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.mesh.rotation.x += p.rotSpeed.x * dt;
+    p.mesh.rotation.y += p.rotSpeed.y * dt;
+    if (p.life <= 0 || p.mesh.position.y < -1) {
+      confettiGroup.remove(p.mesh);
+      confettiParticles.splice(i, 1);
+    }
+  }
+
+  // 5. Transisi Preset Kamera Halus
+  if (cameraLerpActive) {
+    camera.position.lerp(cameraGoalPos, 0.08);
+    controls.target.lerp(cameraGoalTarget, 0.08);
+    if (camera.position.distanceTo(cameraGoalPos) < 0.08) {
+      cameraLerpActive = false;
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Inisialisasi Awal
+window.addEventListener("load", () => {
+  buildBoard3D();
+  initPlayerData(2);
+  renderHUD();
+  animate();
+  setTimeout(() => {
+    document.getElementById("gameIntro").classList.add("hide");
+  }, 1500);
+});
+</script>
+</body>
+</html>
